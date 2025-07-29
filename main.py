@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Setup
-TOKEN = "your-telegram-bot-token"  # Replace with your actual token
+TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"  # Replace with your actual token
 DOWNLOAD_FOLDER = "/tmp"  # Safe for Render
 
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
