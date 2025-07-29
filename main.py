@@ -1,28 +1,33 @@
 import os
-import time
-import telepot
+import logging
 from pytubefix import YouTube
 import instaloader
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"
-bot = telepot.Bot(TOKEN)
+# Setup
+TOKEN = "your-telegram-bot-token"  # Replace with your actual token
+DOWNLOAD_FOLDER = "/tmp"  # Safe for Render
 
-DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-def handle(msg):
-    if 'text' not in msg:
-        return
+# Logging (helps debug)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-    chat_id = msg['chat']['id']
-    text = msg['text'].strip()
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📥 Send me a YouTube or Instagram link to download:")
 
-    if text == "/start":
-        bot.sendMessage(chat_id, "📥 Send me a YouTube or Instagram link to download:")
-        return
+# Handle video links
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    chat_id = update.effective_chat.id
 
     if not text.startswith("http"):
-        bot.sendMessage(chat_id, "❌ Please enter a valid URL.")
+        await update.message.reply_text("❌ Please enter a valid URL.")
         return
 
     try:
@@ -32,9 +37,9 @@ def handle(msg):
             file_path = stream.download(output_path=DOWNLOAD_FOLDER)
 
             with open(file_path, 'rb') as video:
-                bot.sendVideo(chat_id, video)
+                await context.bot.send_video(chat_id=chat_id, video=video)
 
-            os.remove(file_path)  # optional: delete after sending
+            os.remove(file_path)
 
         elif "instagram.com" in text:
             loader = instaloader.Instaloader(dirname_pattern=DOWNLOAD_FOLDER)
@@ -42,30 +47,37 @@ def handle(msg):
             post = instaloader.Post.from_shortcode(loader.context, shortcode)
             loader.download_post(post, target="insta_temp")
 
-            # Send all downloaded files
             folder = os.path.join(DOWNLOAD_FOLDER, "insta_temp")
             for filename in os.listdir(folder):
                 filepath = os.path.join(folder, filename)
                 if filename.endswith(".mp4"):
                     with open(filepath, 'rb') as f:
-                        bot.sendVideo(chat_id, f)
+                        await context.bot.send_video(chat_id=chat_id, video=f)
                 elif filename.endswith(".jpg"):
                     with open(filepath, 'rb') as f:
-                        bot.sendPhoto(chat_id, f)
+                        await context.bot.send_photo(chat_id=chat_id, photo=f)
 
-            # Cleanup
             for f in os.listdir(folder):
                 os.remove(os.path.join(folder, f))
             os.rmdir(folder)
 
         else:
-            bot.sendMessage(chat_id, "❌ Unsupported URL. Only YouTube and Instagram links are allowed.")
+            await update.message.reply_text("❌ Unsupported URL. Only YouTube and Instagram links are allowed.")
 
     except Exception as e:
-        bot.sendMessage(chat_id, f"⚠️ Error: {e}")
+        await update.message.reply_text(f"⚠️ Error: {e}")
 
-bot.message_loop(handle)
+# Entry point
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-print("🤖 Bot is running...")
-while True:
-    time.sleep(10)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🤖 Bot is running...")
+    await app.run_polling()
+
+# Run bot
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
