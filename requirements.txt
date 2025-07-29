@@ -1,2 +1,2 @@
-telepot
-pytubefix
+telepot==12.7
+yt-dlp==2024.05.27
