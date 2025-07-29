@@ -4,7 +4,7 @@ import telepot
 from pytubefix import YouTube
 import instaloader
 
-TOKEN = "7933290726:AAHtERtWxy9i-gR7ffoX4ZaHt8TxUWXl1Bo"
+TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"
 bot = telepot.Bot(TOKEN)
 
 DOWNLOAD_FOLDER = "downloads"
