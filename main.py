@@ -18,7 +18,7 @@ def handle(msg):
     text = msg['text'].strip()
 
     if text == "/start":
-        bot.sendMessage(chat_id, "👋 Welcome! Send me a YouTube **Shorts or video link**, and I’ll download it for you.")
+        bot.sendMessage(chat_id, "👋 Welcome! Send me a YouTube Shorts or video link, and I’ll download it for you.")
         return
 
     if not text.startswith("http"):
