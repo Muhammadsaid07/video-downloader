@@ -1,11 +1,13 @@
 import os
 import time
 import telepot
-from pytubefix import YouTube
+import yt_dlp
 
-TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"
+# Set your bot token here
+TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"  # 🔁 Replace with your real bot token
 bot = telepot.Bot(TOKEN)
 
+# Create a temp download folder
 TEMP_FOLDER = "temp"
 os.makedirs(TEMP_FOLDER, exist_ok=True)
 
@@ -17,26 +19,29 @@ def handle(msg):
     text = msg['text'].strip()
 
     if text == "/start":
-        bot.sendMessage(chat_id, "📥 Send me a YouTube SHORT link to download:")
+        bot.sendMessage(chat_id, "👋 Welcome! Send me a YouTube **Shorts or video link**, and I’ll download it for you.")
         return
 
     if not text.startswith("http"):
-        bot.sendMessage(chat_id, "❌ Please enter a valid URL.")
+        bot.sendMessage(chat_id, "❌ Please send a valid YouTube video link.")
         return
 
+    bot.sendMessage(chat_id, "⏬ Downloading your video...")
+
     try:
-        if "youtube.com" in text or "youtu.be" in text:
-            yt = YouTube(text)
-            stream = yt.streams.get_highest_resolution()
-            file_path = stream.download(output_path=TEMP_FOLDER)
+        ydl_opts = {
+            'outtmpl': f'{TEMP_FOLDER}/%(id)s.%(ext)s',
+            'format': 'mp4',
+        }
 
-            with open(file_path, 'rb') as video:
-                bot.sendVideo(chat_id, video)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(text, download=True)
+            file_path = ydl.prepare_filename(info)
 
-            os.remove(file_path)
+        with open(file_path, 'rb') as video:
+            bot.sendVideo(chat_id, video)
 
-        else:
-            bot.sendMessage(chat_id, "❌ Unsupported URL. Only YouTube links are allowed.")
+        os.remove(file_path)
 
     except Exception as e:
         bot.sendMessage(chat_id, f"⚠️ Error: {e}")
