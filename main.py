@@ -7,7 +7,6 @@ import yt_dlp
 TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"  # 🔁 Replace with your real bot token
 bot = telepot.Bot(TOKEN)
 
-# Create a temp download folder
 TEMP_FOLDER = "temp"
 os.makedirs(TEMP_FOLDER, exist_ok=True)
 
@@ -32,6 +31,10 @@ def handle(msg):
         ydl_opts = {
             'outtmpl': f'{TEMP_FOLDER}/%(id)s.%(ext)s',
             'format': 'mp4',
+            'noplaylist': True,
+            'quiet': True,
+            'nocheckcertificate': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -47,7 +50,7 @@ def handle(msg):
         bot.sendMessage(chat_id, f"⚠️ Error: {e}")
 
 bot.message_loop(handle)
-
 print("🤖 Bot is running...")
+
 while True:
     time.sleep(10)
