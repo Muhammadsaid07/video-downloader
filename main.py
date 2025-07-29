@@ -3,12 +3,13 @@ import time
 import telepot
 import yt_dlp
 
-# Set your bot token here
-TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"  # 🔁 Replace with your real bot token
+TOKEN = "8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"  # Replace with your real token
 bot = telepot.Bot(TOKEN)
 
 TEMP_FOLDER = "temp"
 os.makedirs(TEMP_FOLDER, exist_ok=True)
+
+COOKIES_FILE = "cookies.txt"  # Make sure this file is in the same directory
 
 def handle(msg):
     if 'text' not in msg:
@@ -22,7 +23,7 @@ def handle(msg):
         return
 
     if not text.startswith("http"):
-        bot.sendMessage(chat_id, "❌ Please send a valid YouTube video link.")
+        bot.sendMessage(chat_id, "❌ Please send a valid YouTube link.")
         return
 
     bot.sendMessage(chat_id, "⏬ Downloading your video...")
@@ -31,10 +32,7 @@ def handle(msg):
         ydl_opts = {
             'outtmpl': f'{TEMP_FOLDER}/%(id)s.%(ext)s',
             'format': 'mp4',
-            'noplaylist': True,
-            'quiet': True,
-            'nocheckcertificate': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'cookiefile': COOKIES_FILE,  # <<==== This fixes the issue
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -50,7 +48,7 @@ def handle(msg):
         bot.sendMessage(chat_id, f"⚠️ Error: {e}")
 
 bot.message_loop(handle)
-print("🤖 Bot is running...")
 
+print("🤖 Bot is running...")
 while True:
     time.sleep(10)
