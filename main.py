@@ -1,86 +1,43 @@
 import os
 import logging
-import asyncio
-from pytubefix import YouTube
-import instaloader
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Load environment variables
-TOKEN = os.environ.get("BOT_TOKEN")
-APP_URL = os.environ.get("APP_URL")
+TOKEN = os.environ["BOT_TOKEN"]
+APP_URL = os.environ["APP_URL"]  # Example: https://your-app-name.onrender.com
 
-if not TOKEN or not APP_URL:
-    raise RuntimeError("❌ BOT_TOKEN or APP_URL not found in environment variables.")
+# Logging setup
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# Create folders
-YOUTUBE_FOLDER = "downloads/youtube"
-INSTAGRAM_FOLDER = "downloads/instagram"
-os.makedirs(YOUTUBE_FOLDER, exist_ok=True)
-os.makedirs(INSTAGRAM_FOLDER, exist_ok=True)
-
-# Telegram handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send me a YouTube or Instagram video link!")
-
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-    chat_id = update.effective_chat.id
-
-    if "youtube.com" in url or "youtu.be" in url:
-        try:
-            yt = YouTube(url)
-            stream = yt.streams.get_highest_resolution()
-            file_path = stream.download(output_path=YOUTUBE_FOLDER)
-            await context.bot.send_video(chat_id=chat_id, video=open(file_path, "rb"))
-        except Exception as e:
-            await update.message.reply_text(f"❌ YouTube error: {e}")
-
-    elif "instagram.com" in url:
-        try:
-            loader = instaloader.Instaloader(dirname_pattern=INSTAGRAM_FOLDER)
-            shortcode = [seg for seg in url.split("/") if seg][-1]
-            post = instaloader.Post.from_shortcode(loader.context, shortcode)
-            loader.download_post(post, target="insta_temp")
-            for file in os.listdir(os.path.join(INSTAGRAM_FOLDER, "insta_temp")):
-                if file.endswith(".mp4"):
-                    with open(os.path.join(INSTAGRAM_FOLDER, "insta_temp", file), "rb") as f:
-                        await context.bot.send_video(chat_id=chat_id, video=f)
-        except Exception as e:
-            await update.message.reply_text(f"❌ Instagram error: {e}")
-    else:
-        await update.message.reply_text("⚠️ Please send a valid YouTube or Instagram link.")
-
-# Flask app for webhook
+# Flask app
 flask_app = Flask(__name__)
-bot_app = None
 
-@flask_app.route("/", methods=["GET"])
-def home():
-    return "Bot is running!"
+# Telegram application
+application = Application.builder().token(TOKEN).build()
 
-@flask_app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), bot_app.bot)
-    await bot_app.process_update(update)
-    return "ok"
+# Example command handler
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Bot is working!")
 
-async def main():
-    global bot_app
-    bot_app = Application.builder().token(TOKEN).build()
+# Add handlers
+application.add_handler(CommandHandler("start", start))
 
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video))
+# Set webhook once when the server starts
+@flask_app.before_first_request
+def init_webhook():
+    webhook_url = f"{APP_URL}/webhook"
+    logging.info(f"Setting webhook to {webhook_url}")
+    application.bot.set_webhook(url=webhook_url)
 
-    # Set webhook
-    await bot_app.bot.set_webhook(f"{APP_URL}/{TOKEN}")
-    logger.info(f"Webhook set to: {APP_URL}/{TOKEN}")
+# Telegram will send POST requests here
+@flask_app.route("/webhook", methods=["POST"])
+def telegram_webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK"
 
+# Start Flask server
 if __name__ == "__main__":
-    asyncio.run(main())
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
