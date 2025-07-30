@@ -1,35 +1,37 @@
 import os
-import time
-import telepot
+import logging
 from pytubefix import YouTube
 import instaloader
 import shutil
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+# Logging (optional but useful for debugging)
+logging.basicConfig(level=logging.INFO)
+
+# Get your token from environment variable
 TOKEN = os.environ["8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"]
-bot = telepot.Bot(TOKEN)
 
 TEMP_DIR = "temp_download"
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
 
-def handle(msg):
-    if 'text' not in msg:
-        return
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🎬 Please send a YouTube or Instagram link.")
 
-    chat_id = msg['chat']['id']
-    text = msg['text'].strip()
-
-    if text == "/start":
-        bot.sendMessage(chat_id, "🎬 Please send a YouTube or Instagram link.")
-        return
+# Handle links
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    chat_id = update.message.chat_id
 
     if not text.startswith("http"):
-        bot.sendMessage(chat_id, "❗️ Please send a valid URL.")
+        await update.message.reply_text("❗️ Please send a valid link.")
         return
 
-    try:
-        bot.sendMessage(chat_id, "⏬ Downloading...")
+    await update.message.reply_text("⏬ Downloading...")
 
+    try:
         if "youtube.com" in text or "youtu.be" in text:
             yt = YouTube(text)
             stream = yt.streams.get_highest_resolution()
@@ -45,27 +47,31 @@ def handle(msg):
             if files:
                 file_path = os.path.join(folder_path, files[0])
             else:
-                bot.sendMessage(chat_id, "⚠️ No video found.")
+                await update.message.reply_text("⚠️ No video found.")
                 return
-
         else:
-            bot.sendMessage(chat_id, "❗️ Only YouTube or Instagram links are supported.")
+            await update.message.reply_text("❗️ Only YouTube or Instagram links are supported.")
             return
 
-        with open(file_path, 'rb') as f:
-            bot.sendVideo(chat_id, f)
+        await context.bot.send_video(chat_id=chat_id, video=open(file_path, 'rb'))
 
         # Clean up
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        os.remove(file_path)
         if "insta_temp" in file_path:
-            shutil.rmtree(os.path.join(TEMP_DIR, "insta_temp"), ignore_errors=True)
+            shutil.rmtree(folder_path, ignore_errors=True)
 
     except Exception as e:
-        bot.sendMessage(chat_id, f"⚠️ An error occurred:\n{e}")
+        await update.message.reply_text(f"⚠️ Error:\n{e}")
 
-bot.message_loop(handle)
-print("🤖 Bot started. Waiting for messages...")
+# Main
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-while True:
-    time.sleep(10)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🤖 Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
