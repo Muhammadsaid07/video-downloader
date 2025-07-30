@@ -1,43 +1,48 @@
 import os
 import logging
-from flask import Flask, request
+from pytubefix import YouTube
+import instaloader
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request
 
-# Load environment variables
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 TOKEN = os.environ["BOT_TOKEN"]
-APP_URL = os.environ["APP_URL"]  # Example: https://your-app-name.onrender.com
+PORT = int(os.environ.get("PORT", 8443))
+APP_URL = os.environ["RENDER_EXTERNAL_URL"] + "webhook"
 
-# Logging setup
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-
-# Flask app
+# Flask app to keep alive
 flask_app = Flask(__name__)
+
+# Telegram handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello! Send me a YouTube or Instagram link.")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    await update.message.reply_text(f"You said: {text}")
 
 # Telegram application
 application = Application.builder().token(TOKEN).build()
-
-# Example command handler
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot is working!")
-
-# Add handlers
 application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Set webhook once when the server starts
-@flask_app.before_first_request
-def init_webhook():
-    webhook_url = f"{APP_URL}/webhook"
-    logging.info(f"Setting webhook to {webhook_url}")
-    application.bot.set_webhook(url=webhook_url)
-
-# Telegram will send POST requests here
+# Flask route for webhook
 @flask_app.route("/webhook", methods=["POST"])
-def telegram_webhook():
+def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
     application.update_queue.put_nowait(update)
-    return "OK"
+    return "ok"
 
-# Start Flask server
+# Start everything
 if __name__ == "__main__":
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    import threading
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT)).start()
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=APP_URL
+    )
