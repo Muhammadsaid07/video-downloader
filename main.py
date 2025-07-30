@@ -11,13 +11,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram bot token from environment variable
+# Load environment variables
 TOKEN = os.environ.get("BOT_TOKEN")
 APP_URL = os.environ.get("APP_URL")
 
 if not TOKEN or not APP_URL:
-    raise RuntimeError("❌ BOT_TOKEN or APP_URL is missing.")
-  # e.g. https://your-app-name.onrender.com
+    raise RuntimeError("❌ BOT_TOKEN or APP_URL not found in environment variables.")
 
 # Create folders
 YOUTUBE_FOLDER = "downloads/youtube"
@@ -78,8 +77,9 @@ async def main():
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video))
 
-    # Set webhook URL
+    # Set webhook
     await bot_app.bot.set_webhook(f"{APP_URL}/{TOKEN}")
+    logger.info(f"Webhook set to: {APP_URL}/{TOKEN}")
 
 if __name__ == "__main__":
     asyncio.run(main())
