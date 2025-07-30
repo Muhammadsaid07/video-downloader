@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get token from environment variable
-TOKEN = os.environ["8359982751:AAHvsrsJXoABZe6kyQQoi-lJbEy5pxZ05mY"]
+TOKEN = os.environ["BOT_TOKEN"]
 
 # Create download folders
 YOUTUBE_FOLDER = "downloads/youtube"
