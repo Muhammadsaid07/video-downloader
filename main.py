@@ -12,8 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Telegram bot token from environment variable
-TOKEN = os.environ["BOT_TOKEN"]
-APP_URL = os.environ["APP_URL"]  # e.g. https://your-app-name.onrender.com
+TOKEN = os.environ.get("BOT_TOKEN")
+APP_URL = os.environ.get("APP_URL")
+
+if not TOKEN or not APP_URL:
+    raise RuntimeError("❌ BOT_TOKEN or APP_URL is missing.")
+  # e.g. https://your-app-name.onrender.com
 
 # Create folders
 YOUTUBE_FOLDER = "downloads/youtube"
