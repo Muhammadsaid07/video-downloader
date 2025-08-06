@@ -41,7 +41,7 @@ def download_video(url: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Hello! Send me a YouTube link and I'll download it for you.")
 
-# Handler for text messages (assumes it's a YouTube URL)
+# Handle text messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
@@ -58,11 +58,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Download error: {e}")
         await update.message.reply_text(f"❌ Error: {e}")
 
-# Register handlers
+# Register bot handlers
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Flask route for Telegram webhook
+# Webhook endpoint
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -78,12 +78,17 @@ def webhook():
 def index():
     return "✅ YouTube Downloader Bot is running."
 
-# Set webhook and run server
+# Set webhook *once*, then run Flask app
+async def setup_webhook():
+    await bot_app.bot.set_webhook(WEBHOOK_URL)
+
+# Only Flask app runs forever
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
-    async def run():
-        await bot_app.bot.set_webhook(WEBHOOK_URL)
-        app.run(host="0.0.0.0", port=port)
+    # Start webhook setup in background
+    loop = asyncio.get_event_loop()
+    loop.create_task(setup_webhook())
 
-    asyncio.run(run())
+    # Run Flask server (non-blocking)
+    app.run(host="0.0.0.0", port=port)
