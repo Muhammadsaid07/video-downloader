@@ -13,7 +13,6 @@ import asyncio
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")
 
-
 # === Configure logging ===
 logging.basicConfig(level=logging.INFO)
 
@@ -35,20 +34,23 @@ bot_app.add_handler(CommandHandler("start", start))
 
 # === Flask route to receive Telegram updates ===
 @app.route('/webhook', methods=["POST"])
-async def webhook():
+def webhook():
     global initialized
-    if not initialized:
-        await bot_app.initialize()
-        await bot_app.start()
-        initialized = True
 
-    # Parse incoming update
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot_app.bot)
+    async def handle():
+        global initialized
+        if not initialized:
+            await bot_app.initialize()
+            await bot_app.start()
+            initialized = True
 
-    # Process the update using the bot application
-    await bot_app.process_update(update)
+        data = request.get_json(force=True)
+        update = Update.de_json(data, bot_app.bot)
+        await bot_app.process_update(update)
+
+    asyncio.run(handle())
     return "ok", 200
+
 
 # === Optional health check route ===
 @app.route('/', methods=["GET", "HEAD"])
