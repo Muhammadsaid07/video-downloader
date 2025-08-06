@@ -62,7 +62,7 @@ def webhook():
     data = request.get_json(force=True)
     print("📬 Received Telegram update:", data)
     update = Update.de_json(data, bot_app.bot)
-    asyncio.run(bot_app.process_update(update))
+    asyncio.get_event_loop().create_task(bot_app.process_update(update))
     return "OK"
 
 # Health check route
