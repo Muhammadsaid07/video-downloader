@@ -41,7 +41,7 @@ def download_video(url: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Hello! Send me a YouTube link and I'll download it for you.")
 
-# Handle incoming messages (assume it's a YouTube link)
+# Handle messages (YouTube URLs)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
@@ -62,6 +62,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+# Global flag to ensure initialization only once
+initialized = False
+
 # Webhook route
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -69,8 +72,19 @@ def webhook():
         data = request.get_json(force=True)
         update = Update.de_json(data, bot_app.bot)
 
-        # Run the coroutine safely
-        asyncio.run(bot_app.process_update(update))
+        # Create a new event loop for Flask context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def handle_update():
+            global initialized
+            if not initialized:
+                await bot_app.initialize()
+                initialized = True
+            await bot_app.process_update(update)
+
+        loop.run_until_complete(handle_update())
+        loop.close()
 
     except Exception as e:
         logging.error(f"Webhook error: {e}")
@@ -81,13 +95,14 @@ def webhook():
 def index():
     return "✅ YouTube Downloader Bot is running."
 
-# Set webhook and run the server
+# Initialize webhook and run server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     async def setup():
+        await bot_app.initialize()
         await bot_app.bot.set_webhook(WEBHOOK_URL)
+        logging.info("✅ Webhook has been set.")
 
-    # Run webhook setup before starting Flask app
     asyncio.run(setup())
     app.run(host="0.0.0.0", port=port)
