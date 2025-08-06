@@ -8,7 +8,7 @@ import asyncio
 
 # Load bot token and webhook URL from environment
 TOKEN = os.environ["BOT_TOKEN"]
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://your-app-name.onrender.com/webhook")  # Replace if needed
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com")  # Replace if needed
 
 # Set up Flask
 app = Flask(__name__)
