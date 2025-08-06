@@ -11,7 +11,8 @@ import asyncio
 
 # === Load environment variables ===
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-domain.com/webhook")  # e.g., https://your-app.onrender.com/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")
+
 
 # === Configure logging ===
 logging.basicConfig(level=logging.INFO)
