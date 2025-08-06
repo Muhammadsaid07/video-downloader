@@ -1,67 +1,65 @@
 import os
-import uuid
-import yt_dlp
+import logging
 from flask import Flask, request
-from telegram import Bot
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters
+import yt_dlp
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# Environment variables
+TOKEN = os.environ.get("BOT_TOKEN")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
-bot = Bot(token=BOT_TOKEN)
 
+# Logging
+logging.basicConfig(level=logging.INFO)
+
+# Telegram Bot Setup
+bot = Bot(token=TOKEN)
 app = Flask(__name__)
-DOWNLOAD_DIR = "./downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-def download_video(url):
-    uid = str(uuid.uuid4())
-    output = os.path.join(DOWNLOAD_DIR, uid + ".%(ext)s")
-    options = {
-        "outtmpl": output,
-        "format": "bestvideo+bestaudio/best",
-        "quiet": True,
-        "merge_output_format": "mp4",
-    }
-    with yt_dlp.YoutubeDL(options) as ydl:
-        ydl.download([url])
-    for f in os.listdir(DOWNLOAD_DIR):
-        if f.startswith(uid):
-            return os.path.join(DOWNLOAD_DIR, f)
-    return None
+# Set up dispatcher
+dispatcher = Dispatcher(bot=bot, update_queue=None, use_context=True)
+
+# /start handler
+def start(update, context):
+    update.message.reply_text("👋 Send me a YouTube or Instagram link and I'll download it!")
+
+# Video handler
+def handle_video(update, context):
+    url = update.message.text
+    chat_id = update.effective_chat.id
+    filename = f"video_{chat_id}.mp4"
+    try:
+        ydl_opts = {
+            'outtmpl': filename,
+            'format': 'best',
+            'quiet': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        with open(filename, "rb") as video:
+            bot.send_video(chat_id=chat_id, video=video)
+    except Exception as e:
+        bot.send_message(chat_id=chat_id, text=f"❌ Error: {e}")
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
+
+# Add handlers
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video))
+
+# Flask routes
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running."
 
 @app.route(f"/webhook/{WEBHOOK_SECRET}", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    message = data.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    text = message.get("text")
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return "OK"
 
-    if not chat_id or not text:
-        return "Invalid", 200
-
-    if "youtu" not in text and "instagram" not in text:
-        bot.send_message(chat_id=chat_id, text="❌ Send a YouTube or Instagram link.")
-        return "OK", 200
-
-    bot.send_message(chat_id=chat_id, text="⏳ Downloading...")
-
-    try:
-        file_path = download_video(text)
-        if file_path:
-            with open(file_path, "rb") as vid:
-                bot.send_video(chat_id=chat_id, video=vid)
-            os.remove(file_path)
-        else:
-            bot.send_message(chat_id=chat_id, text="⚠️ Download failed.")
-    except Exception as e:
-        bot.send_message(chat_id=chat_id, text=f"❌ Error: {e}")
-
-    return "OK", 200
-
-@app.route("/")
-def index():
-    return "✅ Bot is live!"
-
-# ✅ Start Flask server
+# ✅ THIS PART IS ESSENTIAL FOR RENDER
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # Render provides $PORT
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
