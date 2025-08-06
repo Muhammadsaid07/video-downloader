@@ -14,7 +14,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://video-downloader-hzcm.onren
 # Flask app
 app = Flask(__name__)
 
-# Telegram bot app
+# Telegram bot application
 bot_app = Application.builder().token(TOKEN).build()
 
 # Logging
@@ -41,7 +41,7 @@ def download_video(url: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Hello! Send me a YouTube link and I'll download it for you.")
 
-# Handle text messages
+# Handle incoming messages (assume it's a YouTube link)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
@@ -58,37 +58,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Download error: {e}")
         await update.message.reply_text(f"❌ Error: {e}")
 
-# Register bot handlers
+# Register handlers
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Webhook endpoint
+# Webhook route
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, bot_app.bot)
-        asyncio.create_task(bot_app.process_update(update))
+
+        # Run the coroutine safely
+        asyncio.run(bot_app.process_update(update))
+
     except Exception as e:
         logging.error(f"Webhook error: {e}")
     return "OK"
 
-# Health check
+# Health check route
 @app.route("/")
 def index():
     return "✅ YouTube Downloader Bot is running."
 
-# Set webhook *once*, then run Flask app
-async def setup_webhook():
-    await bot_app.bot.set_webhook(WEBHOOK_URL)
-
-# Only Flask app runs forever
+# Set webhook and run the server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
-    # Start webhook setup in background
-    loop = asyncio.get_event_loop()
-    loop.create_task(setup_webhook())
+    async def setup():
+        await bot_app.bot.set_webhook(WEBHOOK_URL)
 
-    # Run Flask server (non-blocking)
+    # Run webhook setup before starting Flask app
+    asyncio.run(setup())
     app.run(host="0.0.0.0", port=port)
