@@ -13,28 +13,24 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")  # MUST match Render URL exactly
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")  # Your Render URL + /webhook
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
-TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB for normal accounts
+TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
+COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")  # Optional cookies file
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# -------------------------
 # Flask app
-# -------------------------
 app = Flask(__name__)
 
-# -------------------------
-# Telegram Application
-# -------------------------
+# Telegram app
 bot_app = Application.builder().token(TOKEN).build()
 
 # Executor for blocking work
 blocking_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 bot_loop = None
-
 
 # -------------------------
 # pytubefix downloader
@@ -44,9 +40,17 @@ def pytube_download(url: str, out_dir: str) -> str:
     if "youtube.com/shorts/" in url:
         url = url.replace("youtube.com/shorts/", "youtube.com/watch?v=")
 
-    yt = YouTube(url, use_po_token=True)  # ✅ Added PO token
+    # Prepare kwargs for YouTube()
+    yt_kwargs = {"use_po_token": True, "allow_oauth_cache": False}
 
-    # Try progressive first, then fallback to highest resolution
+    # If cookies file exists, use it
+    if os.path.exists(COOKIES_FILE):
+        yt_kwargs["cookies"] = COOKIES_FILE
+        logger.info("Using cookies file for YouTube download.")
+
+    yt = YouTube(url, **yt_kwargs)
+
+    # Try progressive first, then fallback
     stream = (yt.streams.filter(progressive=True, file_extension='mp4')
               .order_by('resolution').desc().first()
               or yt.streams.get_highest_resolution())
@@ -56,14 +60,13 @@ def pytube_download(url: str, out_dir: str) -> str:
 
     return stream.download(output_path=out_dir)
 
-
-
 # -------------------------
 # Telegram Handlers
 # -------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Send me a YouTube link (video or Shorts) and I'll download it for you.")
-
+    await update.message.reply_text(
+        "👋 Send me a YouTube link (video or Shorts) and I'll download it for you."
+    )
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = (update.message.text or "").strip()
@@ -104,26 +107,22 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Download error:")
         await msg.edit_text(f"❌ Failed to download: {e}")
 
-
 # Register handlers
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
-
 
 # -------------------------
 # Background bot runner
 # -------------------------
 async def _bot_runner():
     await bot_app.initialize()
-    await bot_app.bot.set_webhook(WEBHOOK_URL)
-    logger.info("Webhook set to %s", WEBHOOK_URL)
+    result = await bot_app.bot.set_webhook(WEBHOOK_URL)
+    logger.info("Webhook set to %s — result: %s", WEBHOOK_URL, result)
     await asyncio.Future()
-
 
 def start_background_loop(loop: asyncio.AbstractEventLoop):
     asyncio.set_event_loop(loop)
     loop.run_until_complete(_bot_runner())
-
 
 def ensure_bot_loop_running():
     global bot_loop
@@ -134,7 +133,6 @@ def ensure_bot_loop_running():
     t.start()
     logger.info("Started background bot loop thread.")
     return bot_loop
-
 
 # -------------------------
 # Webhook endpoint
@@ -164,11 +162,9 @@ def webhook():
 
     return "ok", 200
 
-
 @app.route("/", methods=["GET", "HEAD"])
 def index():
     return "Bot is running!", 200
-
 
 if __name__ == "__main__":
     ensure_bot_loop_running()
