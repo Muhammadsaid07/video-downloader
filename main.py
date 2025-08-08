@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-render-app.onrender.com/webhook")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
 TELEGRAM_FILE_LIMIT = 2 * 1024 * 1024 * 1024  # 2 GB max for Telegram bots
@@ -177,3 +177,4 @@ if __name__ == "__main__":
     ensure_bot_loop_running()
     logger.info("Starting Flask app on port %d", PORT)
     app.run(host="0.0.0.0", port=PORT)
+
