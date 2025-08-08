@@ -13,9 +13,10 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app-url.onrender.com/webhook")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app.onrender.com/webhook")  # MUST match Render URL exactly
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
+TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB for normal accounts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,9 +40,20 @@ bot_loop = None
 # pytubefix downloader
 # -------------------------
 def pytube_download(url: str, out_dir: str) -> str:
+    # Fix Shorts URL format
+    if "youtube.com/shorts/" in url:
+        url = url.replace("youtube.com/shorts/", "youtube.com/watch?v=")
+
     yt = YouTube(url)
-    stream = yt.streams.filter(progressive=True, file_extension='mp4') \
-                       .order_by('resolution').desc().first()
+
+    # Try progressive first, then fallback to highest resolution
+    stream = (yt.streams.filter(progressive=True, file_extension='mp4')
+              .order_by('resolution').desc().first()
+              or yt.streams.get_highest_resolution())
+
+    if not stream:
+        raise Exception("No downloadable streams found.")
+
     return stream.download(output_path=out_dir)
 
 
@@ -49,25 +61,32 @@ def pytube_download(url: str, out_dir: str) -> str:
 # Telegram Handlers
 # -------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Send me a YouTube link and I'll download it for you.")
+    await update.message.reply_text("👋 Send me a YouTube link (video or Shorts) and I'll download it for you.")
 
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = (update.message.text or "").strip()
     if not (url.startswith("http://") or url.startswith("https://")):
-        await update.message.reply_text("⚠️ Please send a valid link (http/https).")
+        await update.message.reply_text("⚠️ Please send a valid link starting with http or https.")
         return
 
     msg = await update.message.reply_text("📥 Downloading video...")
+
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             loop = asyncio.get_running_loop()
             logger.info("Downloading YouTube video: %s", url)
+
             file_path = await loop.run_in_executor(blocking_executor, pytube_download, url, tmpdir)
 
             if not os.path.exists(file_path):
                 logger.error("Downloaded file not found: %s", file_path)
-                await update.message.reply_text("❌ Download failed.")
+                await msg.edit_text("❌ Download failed — no file found.")
+                return
+
+            file_size = os.path.getsize(file_path)
+            if file_size > TELEGRAM_FILE_LIMIT:
+                await msg.edit_text("⚠️ This video is too large for Telegram (max 50 MB).")
                 return
 
             await msg.edit_text("📤 Uploading to Telegram...")
@@ -82,7 +101,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("✅ Done — video sent.")
     except Exception as e:
         logger.exception("Download error:")
-        await update.message.reply_text("❌ Failed to download or send the video.")
+        await msg.edit_text(f"❌ Failed to download: {e}")
 
 
 # Register handlers
