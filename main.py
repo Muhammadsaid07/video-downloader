@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app.onrender.com/webhook")  # MUST match Render URL exactly
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")  # MUST match Render URL exactly
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
 TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB for normal accounts
