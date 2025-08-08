@@ -44,7 +44,7 @@ def pytube_download(url: str, out_dir: str) -> str:
     if "youtube.com/shorts/" in url:
         url = url.replace("youtube.com/shorts/", "youtube.com/watch?v=")
 
-    yt = YouTube(url)
+    yt = YouTube(url, use_po_token=True)  # ✅ Added PO token
 
     # Try progressive first, then fallback to highest resolution
     stream = (yt.streams.filter(progressive=True, file_extension='mp4')
@@ -55,6 +55,7 @@ def pytube_download(url: str, out_dir: str) -> str:
         raise Exception("No downloadable streams found.")
 
     return stream.download(output_path=out_dir)
+
 
 
 # -------------------------
