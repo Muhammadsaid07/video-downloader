@@ -6,40 +6,31 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
-import aiofiles
-import shutil
 
-# === Load environment variables ===
+# Load env vars
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")
 
-# === Configure logging ===
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-# === Create Flask app ===
+# Flask app
 app = Flask(__name__)
 
-# === Create Telegram bot application ===
+# Bot app
 bot_app = Application.builder().token(TOKEN).build()
 
-# === Flag to avoid reinitializing bot multiple times ===
-initialized = False
-
-
-# === Handlers ===
+# Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Send me a YouTube link and I'll download it for you.")
 
-
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
-
     if not (url.startswith("http://") or url.startswith("https://")):
         await update.message.reply_text("⚠️ Please send a valid YouTube link.")
         return
 
     await update.message.reply_text("📥 Downloading your video... please wait.")
-
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             ydl_opts = {
@@ -51,52 +42,33 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
 
-            # Send the video
-            async with aiofiles.open(file_path, 'rb') as f:
+            with open(file_path, 'rb') as f:
                 await update.message.reply_video(video=f, caption="✅ Here’s your video!")
-
     except Exception as e:
         logging.error(f"Download error: {e}")
         await update.message.reply_text("❌ Failed to download video.")
 
-# === Register handlers ===
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
 
-
-# === Flask route to receive Telegram updates ===
-@app.route('/webhook', methods=["POST"])
+# Webhook route
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    global initialized
-
-    if not initialized:
-        asyncio.create_task(init_bot())
-
     data = request.get_json(force=True)
     update = Update.de_json(data, bot_app.bot)
-    asyncio.create_task(bot_app.process_update(update))
+    asyncio.run(bot_app.process_update(update))
     return "ok", 200
 
-
-async def init_bot():
-    global initialized
-    if not initialized:
-        await bot_app.initialize()
-        await bot_app.start()
-        initialized = True
-
-
-# === Health check ===
-@app.route('/', methods=["GET", "HEAD"])
+# Health check
+@app.route("/", methods=["GET", "HEAD"])
 def index():
     return "Bot is running!", 200
 
-
-# === Main entry ===
-if __name__ == '__main__':
-    async def set_webhook():
+if __name__ == "__main__":
+    async def run():
+        await bot_app.initialize()
         await bot_app.bot.set_webhook(url=WEBHOOK_URL)
-        logging.info("✅ Webhook has been set.")
+        logging.info("✅ Webhook set")
+    asyncio.run(run())
 
-    asyncio.run(set_webhook())
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
