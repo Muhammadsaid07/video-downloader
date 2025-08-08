@@ -13,7 +13,14 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")
+
+# Auto-generate webhook URL for Render
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render sets this automatically
+if RENDER_URL:
+    WEBHOOK_URL = f"{RENDER_URL}/webhook"
+else:
+    WEBHOOK_URL = "https://video-downloader-hzcm.onrender.com/webhook"  # fallback for local/dev
+
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
 
@@ -33,22 +40,22 @@ bot_app = Application.builder().token(TOKEN).build()
 # Executor for blocking work (yt_dlp, file IO)
 blocking_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
-# We'll run the Application on its own asyncio loop running in a background thread.
+# Bot loop for async handling in background thread
 bot_loop = None
 
-
 # -------------------------
-# Blocking helper: download with yt_dlp
+# Blocking helper: yt_dlp download
 # -------------------------
 def yt_dlp_download(url: str, out_dir: str) -> str:
     """
-    Download the best mp4-compatible file using yt_dlp.
-    Always re-encodes to H.264 + AAC MP4 so Telegram accepts it.
+    Download the best mp4-compatible video with yt_dlp.
+    Always merges to H.264 + AAC MP4 so Telegram accepts it.
     Returns absolute path to the downloaded file.
     """
     ydl_opts = {
         "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4/best",
+        "format": "bestvideo+bestaudio/best",
+        "merge_output_format": "mp4",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -56,7 +63,7 @@ def yt_dlp_download(url: str, out_dir: str) -> str:
         "postprocessors": [
             {
                 "key": "FFmpegVideoConvertor",
-                "preferedformat": "mp4"  # <-- correct spelling for yt_dlp
+                "preferredformat": "mp4"
             }
         ]
     }
@@ -65,7 +72,7 @@ def yt_dlp_download(url: str, out_dir: str) -> str:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
 
-    # Ensure file extension is .mp4
+    # Force .mp4 extension if needed
     if not filename.lower().endswith(".mp4"):
         base = os.path.splitext(filename)[0]
         mp4_path = base + ".mp4"
@@ -74,13 +81,11 @@ def yt_dlp_download(url: str, out_dir: str) -> str:
 
     return filename
 
-
 # -------------------------
 # Telegram Handlers
 # -------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Send me a YouTube link and I'll download it for you.")
-
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = (update.message.text or "").strip()
@@ -89,10 +94,11 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = await update.message.reply_text("📥 Download started. This can take a while for big videos.")
+
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             loop = asyncio.get_running_loop()
-            logger.info("Scheduling yt_dlp download for URL: %s", url)
+            logger.info("Downloading from URL: %s", url)
             file_path = await loop.run_in_executor(blocking_executor, yt_dlp_download, url, tmpdir)
 
             if not os.path.exists(file_path):
@@ -102,26 +108,26 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await msg.edit_text("📤 Uploading to Telegram...")
 
+            # Send as video if size < 50MB, else send as document
+            file_size = os.path.getsize(file_path)
             with open(file_path, "rb") as f:
-                await context.bot.send_video(
-                    chat_id=update.effective_chat.id,
-                    video=f,
-                    caption="✅ Here’s your video!"
-                )
+                if file_size < 50 * 1024 * 1024:
+                    await update.message.reply_video(video=f, caption="✅ Here’s your video!")
+                else:
+                    await update.message.reply_document(document=f, caption="✅ Here’s your video! (Sent as file)")
 
-            await msg.edit_text("✅ Done — video sent. Temporary file removed.")
+            await msg.edit_text("✅ Done — video sent.")
+
     except Exception as e:
         logger.exception("Download/upload error:")
         try:
-            await update.message.reply_text("❌ Failed to download or send the video.")
+            await update.message.reply_text(f"❌ Failed: {e}")
         except Exception:
             logger.exception("Failed to send error message to user.")
-
 
 # Register handlers
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
-
 
 # -------------------------
 # Background bot runner
@@ -132,11 +138,9 @@ async def _bot_runner():
     logger.info("Webhook set to %s", WEBHOOK_URL)
     await asyncio.Future()
 
-
 def start_background_loop(loop: asyncio.AbstractEventLoop):
     asyncio.set_event_loop(loop)
     loop.run_until_complete(_bot_runner())
-
 
 def ensure_bot_loop_running():
     global bot_loop
@@ -148,7 +152,6 @@ def ensure_bot_loop_running():
     logger.info("Started background bot loop thread.")
     return bot_loop
 
-
 # -------------------------
 # Webhook endpoint
 # -------------------------
@@ -159,29 +162,17 @@ def webhook():
 
     try:
         data = request.get_json(force=True)
-    except Exception:
-        logger.exception("Invalid JSON in incoming webhook")
-        abort(400)
-
-    try:
         update = Update.de_json(data, bot_app.bot)
-    except Exception:
-        logger.exception("Failed to create Update from JSON")
-        abort(400)
-
-    try:
         asyncio.run_coroutine_threadsafe(bot_app.process_update(update), bot_loop)
     except Exception:
-        logger.exception("Failed to schedule process_update on bot loop")
-        abort(500)
+        logger.exception("Webhook error")
+        abort(400)
 
     return "ok", 200
-
 
 @app.route("/", methods=["GET", "HEAD"])
 def index():
     return "Bot is running!", 200
-
 
 if __name__ == "__main__":
     ensure_bot_loop_running()
