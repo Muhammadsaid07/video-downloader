@@ -55,12 +55,12 @@ def yt_dlp_download(url: str, out_dir: str) -> str:
         "nocheckcertificate": True,
         # Always convert to H.264 MP4 to avoid Telegram errors
         "postprocessors": [
-            {
-                "key": "FFmpegVideoConvertor",
-                "preferedformat": "mp4"  # H.264 video + AAC audio
-            }
-        ]
+    {
+        "key": "FFmpegVideoConvertor",
+        "preferredformat": "mp4"
     }
+]
+
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
