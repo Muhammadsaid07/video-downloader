@@ -49,7 +49,7 @@ bot_loop = None
 def yt_dlp_download(url: str, out_dir: str) -> str:
     """
     Download the best mp4-compatible video with yt_dlp.
-    Always merges to H.264 + AAC MP4 so Telegram accepts it.
+    Always merges to MP4 so Telegram accepts it.
     Returns absolute path to the downloaded file.
     """
     ydl_opts = {
@@ -59,14 +59,21 @@ def yt_dlp_download(url: str, out_dir: str) -> str:
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "nocheckcertificate": True,
-        "postprocessors": [
-            {
-                "key": "FFmpegVideoConvertor",
-                "preferredformat": "mp4"
-            }
-        ]
+        "nocheckcertificate": True
     }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+
+    # Force .mp4 extension if needed
+    if not filename.lower().endswith(".mp4"):
+        base = os.path.splitext(filename)[0]
+        mp4_path = base + ".mp4"
+        if os.path.exists(mp4_path):
+            filename = mp4_path
+
+    return filename
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
