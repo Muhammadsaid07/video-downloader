@@ -1,3 +1,4 @@
-Flask==2.3.3
-python-telegram-bot==20.7
-yt_dlp==2024.05.27
+Flask
+python-telegram-bot==20.3
+yt-dlp
+aiofiles
