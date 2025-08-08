@@ -43,22 +43,36 @@ bot_loop = None  # will hold the asyncio loop instance
 def yt_dlp_download(url: str, out_dir: str) -> str:
     """
     Synchronously download the best mp4-compatible file using yt_dlp.
+    Always re-encodes to H.264 + AAC MP4 so Telegram accepts it.
     Returns absolute path to the downloaded file.
     """
     ydl_opts = {
-        # Template ensures safe filenames
         "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
-        # Prefer mp4/m4a so Telegram accepts it, but fallback to best available
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4/best",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        # Avoid overwriting
         "nocheckcertificate": True,
+        # Always convert to H.264 MP4 to avoid Telegram errors
+        "postprocessors": [
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4"  # H.264 video + AAC audio
+            }
+        ]
     }
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
+
+    # Ensure file extension is .mp4
+    if not filename.lower().endswith(".mp4"):
+        base = os.path.splitext(filename)[0]
+        mp4_path = base + ".mp4"
+        if os.path.exists(mp4_path):
+            filename = mp4_path
+
     return filename
 
 
