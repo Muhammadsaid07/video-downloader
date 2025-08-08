@@ -38,29 +38,29 @@ bot_loop = None  # will hold the asyncio loop instance
 
 
 # -------------------------
-# Blocking helper: download with yt_dlp (runs in threadpool)
+# Blocking helper: download with yt_dlp
 # -------------------------
 def yt_dlp_download(url: str, out_dir: str) -> str:
     """
-    Synchronously download the best mp4-compatible file using yt_dlp.
-    Always re-encodes to H.264 + AAC MP4 so Telegram accepts it.
+    Synchronously download the best H.264 MP4 file using yt_dlp.
+    Always re-encodes to H.264 + AAC so Telegram accepts it.
     Returns absolute path to the downloaded file.
     """
     ydl_opts = {
         "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4/best",
+        # Force H.264 video + AAC audio when possible
+        "format": "bv*[vcodec~='^((avc1)|(h264))']+ba[acodec~='^((mp4a)|(aac))']/b[ext=mp4]/best",
         "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
+        "quiet": False,  # Enable logs for debugging
+        "no_warnings": False,
         "nocheckcertificate": True,
-        # Always convert to H.264 MP4 to avoid Telegram errors
         "postprocessors": [
-    {
-        "key": "FFmpegVideoConvertor",
-        "preferredformat": "mp4"
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferredformat": "mp4"
+            }
+        ]
     }
-]
-
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -97,9 +97,8 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Use a temporary directory so file is auto-removed afterwards
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Schedule blocking download in threadpool
             loop = asyncio.get_running_loop()
-            logger.info("Scheduling yt_dlp download for URL: %s", url)
+            logger.info("Downloading URL: %s", url)
             file_path = await loop.run_in_executor(blocking_executor, yt_dlp_download, url, tmpdir)
 
             # Ensure file exists
@@ -108,24 +107,27 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Download failed (file missing).")
                 return
 
-            # Inform user about upload beginning
+            # Check file size (50MB Telegram bot API limit)
+            file_size = os.path.getsize(file_path)
+            if file_size > 50 * 1024 * 1024:
+                await update.message.reply_text("⚠️ File too large for Telegram’s 50MB limit.")
+                return
+
             await msg.edit_text("📤 Uploading to Telegram...")
 
-            # Send video (keep file open so Telegram library can stream it)
-            # Use context.bot.send_video to ensure upload happens asynchronously
+            # Send video
             with open(file_path, "rb") as f:
-                # If file is larger than allowed by Telegram you'll still get an error — consider using file size checks.
                 await context.bot.send_video(
                     chat_id=update.effective_chat.id,
                     video=f,
                     caption="✅ Here’s your video!"
                 )
 
-            await msg.edit_text("✅ Done — video sent. Temporary file removed.")
+            await msg.edit_text("✅ Done — video sent.")
     except Exception as e:
         logger.exception("Download/upload error:")
         try:
-            await update.message.reply_text("❌ Failed to download or send the video.")
+            await update.message.reply_text(f"❌ Failed: {e}")
         except Exception:
             logger.exception("Failed to send error message to user.")
 
@@ -139,30 +141,13 @@ bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_vid
 # Background bot runner
 # -------------------------
 async def _bot_runner():
-    """
-    Coroutine run inside a dedicated loop on a background thread.
-    Initializes the Application and sets webhook.
-    Keeps running forever so we can process incoming updates via process_update().
-    """
-    # Initialize the application (register handlers, etc.)
     await bot_app.initialize()
-
-    # Set webhook
-    # make sure to set drop_pending_updates=False if you don't want to drop updates that arrived between restarts
     await bot_app.bot.set_webhook(WEBHOOK_URL)
     logger.info("Webhook set to %s", WEBHOOK_URL)
-
-    # Note: we don't call bot_app.start_polling() because we use process_update via webhook.
-    # Keep the loop alive indefinitely
-    logger.info("Bot runner started; background loop is running.")
     await asyncio.Future()  # run forever
 
 
 def start_background_loop(loop: asyncio.AbstractEventLoop):
-    """
-    Start the bot runner coroutine on the provided loop.
-    This will be used by the background thread.
-    """
     asyncio.set_event_loop(loop)
     loop.run_until_complete(_bot_runner())
 
@@ -172,7 +157,6 @@ def ensure_bot_loop_running():
     if bot_loop is not None and bot_loop.is_running():
         return bot_loop
 
-    # Create a new loop and run it in a background thread
     bot_loop = asyncio.new_event_loop()
     t = threading.Thread(target=start_background_loop, args=(bot_loop,), daemon=True)
     t.start()
@@ -185,35 +169,16 @@ def ensure_bot_loop_running():
 # -------------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """
-    Flask webhook route. Converts incoming JSON to Update and schedules
-    bot_app.process_update(update) on the bot asyncio loop using
-    asyncio.run_coroutine_threadsafe.
-    """
     if not bot_loop or not bot_loop.is_running():
-        # Try to start the loop if it's not running
         ensure_bot_loop_running()
 
     try:
         data = request.get_json(force=True)
-    except Exception:
-        logger.exception("Invalid JSON in incoming webhook")
-        abort(400)
-
-    try:
         update = Update.de_json(data, bot_app.bot)
+        asyncio.run_coroutine_threadsafe(bot_app.process_update(update), bot_loop)
     except Exception:
-        logger.exception("Failed to create Update from JSON")
+        logger.exception("Webhook handling error")
         abort(400)
-
-    try:
-        # Schedule processing of the update on the bot loop
-        future = asyncio.run_coroutine_threadsafe(bot_app.process_update(update), bot_loop)
-        # Optionally, we could wait for result or set a timeout, but it's fine to fire-and-forget here:
-        # future.result(timeout=10)
-    except Exception:
-        logger.exception("Failed to schedule process_update on bot loop")
-        abort(500)
 
     return "ok", 200
 
@@ -228,8 +193,6 @@ def index():
 # Entry point
 # -------------------------
 if __name__ == "__main__":
-    # Ensure the background loop is started before Flask receives requests
     ensure_bot_loop_running()
     logger.info("Starting Flask app on port %d", PORT)
-    # On Render, the default WSGI server will run this file; app.run is fine for local testing.
     app.run(host="0.0.0.0", port=PORT)
