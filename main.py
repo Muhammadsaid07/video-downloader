@@ -13,11 +13,11 @@ from concurrent.futures import ThreadPoolExecutor
 # Configuration / Logging
 # -------------------------
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://video-downloader-hzcm.onrender.com/webhook")  # Your Render URL + /webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-render-app.onrender.com/webhook")
 PORT = int(os.environ.get("PORT", 10000))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", 4))
-TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
-COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")  # Optional cookies file
+TELEGRAM_FILE_LIMIT = 2 * 1024 * 1024 * 1024  # 2 GB max for Telegram bots
+COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")  # Make sure cookies.txt is uploaded on server
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,6 +40,11 @@ def pytube_download(url: str, out_dir: str) -> str:
     if "youtube.com/shorts/" in url:
         url = url.replace("youtube.com/shorts/", "youtube.com/watch?v=")
 
+    # Fix youtu.be short URL format
+    if "youtu.be/" in url:
+        video_id = url.split("/")[-1]
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
     # Prepare kwargs for YouTube()
     yt_kwargs = {"use_po_token": True, "allow_oauth_cache": False}
 
@@ -51,9 +56,11 @@ def pytube_download(url: str, out_dir: str) -> str:
     yt = YouTube(url, **yt_kwargs)
 
     # Try progressive first, then fallback
-    stream = (yt.streams.filter(progressive=True, file_extension='mp4')
-              .order_by('resolution').desc().first()
-              or yt.streams.get_highest_resolution())
+    stream = (
+        yt.streams.filter(progressive=True, file_extension='mp4')
+        .order_by('resolution').desc().first()
+        or yt.streams.get_highest_resolution()
+    )
 
     if not stream:
         raise Exception("No downloadable streams found.")
@@ -90,7 +97,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             file_size = os.path.getsize(file_path)
             if file_size > TELEGRAM_FILE_LIMIT:
-                await msg.edit_text("⚠️ This video is too large for Telegram (max 50 MB).")
+                await msg.edit_text("⚠️ This video is too large for Telegram (max 2 GB).")
                 return
 
             await msg.edit_text("📤 Uploading to Telegram...")
@@ -118,7 +125,7 @@ async def _bot_runner():
     await bot_app.initialize()
     result = await bot_app.bot.set_webhook(WEBHOOK_URL)
     logger.info("Webhook set to %s — result: %s", WEBHOOK_URL, result)
-    await asyncio.Future()
+    await asyncio.Future()  # run forever
 
 def start_background_loop(loop: asyncio.AbstractEventLoop):
     asyncio.set_event_loop(loop)
